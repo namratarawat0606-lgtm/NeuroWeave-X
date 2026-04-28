@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NeuroWeave X</title>
+  <link rel="stylesheet" href="style.css" />
+
+  <!--
+    face-api.js — A ready-made library that gives us a trained
+    CNN (Convolutional Neural Network) for face emotion detection.
+    We don't train this ourselves — we use their pre-trained model.
+  -->
+  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+  <!--
+    Socket.io client — connects the browser to our server
+    for real-time Room messaging.
+  -->
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+  <!-- ======== NAVBAR ======== -->
+  <nav class="navbar">
+    <div class="logo">
+      <span class="logo-icon">⚡</span>
+      <span class="logo-text">NeuroWeave X</span>
+    </div>
+
+    <!-- Four tabs for our four modules -->
+    <div class="nav-tabs">
+      <button class="tab active" onclick="showTab('voice')">Voice</button>
+      <button class="tab" onclick="showTab('chat')">Chat</button>
+      <button class="tab" onclick="showTab('room')">Room</button>
+      <button class="tab" onclick="showTab('face')">Face</button>
+    </div>
+
+    <!-- Live stress score — updates from all modules -->
+    <div class="stress-badge" id="stressBadge">Stress: 0/100</div>
+  </nav>
+
+
+  <!-- ======================================================
+    MODULE 1 — VOICE EMOTION ANALYZER
+    Uses the browser's built-in microphone + Web Speech API
+    to transcribe what you say, then analyses your words
+    and audio properties to detect your emotion.
+  ====================================================== -->
+  <div id="tab-voice" class="tab-content active">
+    <div class="module-header">
+      <div>
+        <h2>Voice Emotion Analyzer</h2>
+        <p class="subtitle" id="voiceStatus">Click Try Again to speak</p>
+      </div>
+      <div class="module-actions">
+        <button onclick="resetVoice()">↺ Reset</button>
+        <button onclick="runVoiceDemo()">▶ Demo</button>
+        <button class="btn-primary" onclick="startVoice()">🎤 Try Again</button>
+      </div>
+    </div>
+
+    <!-- Waveform canvas — animates while listening -->
+    <div class="waveform-box">
+      <canvas id="waveformCanvas"></canvas>
+    </div>
+
+    <!-- Voice metrics — show after analysis -->
+    <div class="metrics-row" id="voiceMetrics" style="display:none">
+      <div class="metric-card">
+        <div class="metric-label">ENERGY</div>
+        <div class="metric-value yellow" id="metricEnergy">–</div>
+        <div class="metric-bar"><div class="bar-fill yellow" id="barEnergy"></div></div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">PITCH</div>
+        <div class="metric-value blue" id="metricPitch">–</div>
+        <div class="metric-bar"><div class="bar-fill blue" id="barPitch"></div></div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">ROUGHNESS</div>
+        <div class="metric-value purple" id="metricRoughness">–</div>
+        <div class="metric-bar"><div class="bar-fill purple" id="barRoughness"></div></div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">BRIGHTNESS</div>
+        <div class="metric-value green" id="metricBrightness">–</div>
+        <div class="metric-bar"><div class="bar-fill green" id="barBrightness"></div></div>
+      </div>
+    </div>
+
+    <!-- Detected emotion result -->
+    <div class="result-card" id="voiceResult" style="display:none">
+      <span class="result-emoji" id="voiceEmoji">😐</span>
+      <div class="result-info">
+        <div class="result-source">DETECTED FROM YOUR WORDS</div>
+        <div class="result-emotion" id="voiceEmotion">–</div>
+        <div class="result-desc" id="voiceDesc">–</div>
+      </div>
+      <div class="result-confidence">
+        <div class="conf-label">CONFIDENCE</div>
+        <div class="conf-value" id="voiceConf">–</div>
+      </div>
+    </div>
+
+    <div class="analysis-note" id="voiceNote" style="display:none"></div>
+  </div>
+
+
+  <!-- ======================================================
+    MODULE 2 — AI WELLNESS CHAT
+    A chatbot powered by OpenAI's GPT model.
+    User types (or speaks) a message → we send it to our
+    backend → backend calls OpenAI → reply shown in chat.
+  ====================================================== -->
+  <div id="tab-chat" class="tab-content">
+    <div class="module-header">
+      <div>
+        <h2>AI Wellness Chat</h2>
+        <p class="subtitle">Powered by GPT — ask me anything</p>
+      </div>
+      <button onclick="newChat()">+ New chat</button>
+    </div>
+
+    <!-- Welcome screen (shown before first message) -->
+    <div id="chatWelcome" class="chat-welcome">
+      <div class="chat-brain">🧠</div>
+      <h3>How can I help you today?</h3>
+      <p>Ask me anything — stress management, emotions, health tips, science, or just have a conversation.</p>
+      <div class="quick-prompts">
+        <button onclick="sendQuick('How can I reduce stress right now?')">How can I reduce stress right now?</button>
+        <button onclick="sendQuick('Why do I feel anxious in the mornings?')">Why do I feel anxious in the mornings?</button>
+        <button onclick="sendQuick('Give me a 5-minute mindfulness exercise')">Give me a 5-minute mindfulness exercise</button>
+        <button onclick="sendQuick('What is cortisol and how does it affect me?')">What is cortisol and how does it affect me?</button>
+      </div>
+    </div>
+
+    <!-- Chat messages appear here -->
+    <div id="chatMessages" class="chat-messages" style="display:none"></div>
+
+    <!-- Input bar -->
+    <div class="chat-input-bar">
+      <input type="text" id="chatInput" placeholder="Ask anything..." onkeydown="if(event.key==='Enter') sendChat()" />
+      <button onclick="startChatVoice()">🎤</button>
+      <button class="btn-primary" onclick="sendChat()">➤</button>
+    </div>
+  </div>
+
+
+  <!-- ======================================================
+    MODULE 3 — ROOM (WELLNESS LOUNGE)
+    A real-time chat room using Socket.io (WebSocket).
+    All users who open this page are connected to the
+    same room and can chat instantly.
+  ====================================================== -->
+  <div id="tab-room" class="tab-content">
+    <div class="room-layout">
+
+      <!-- Left panel: online users list -->
+      <div class="room-sidebar">
+        <div class="sidebar-status">
+          <span class="status-dot green"></span>
+          <span id="onlineCount">CONNECTED</span>
+        </div>
+        <div id="userList" class="user-list"></div>
+        <button class="btn-away" id="awayBtn" onclick="toggleAway()">Set Away</button>
+      </div>
+
+      <!-- Right panel: messages -->
+      <div class="room-main">
+        <div class="room-header">
+          <span class="channel-name"># wellness-lounge</span>
+          <span class="status-dot green"></span>
+          <span class="room-desc">Real-time · share &amp; connect with others</span>
+        </div>
+        <div id="roomMessages" class="room-messages"></div>
+        <div class="room-input-bar">
+          <input type="text" id="roomInput" placeholder="Message as you..." onkeydown="if(event.key==='Enter') sendRoomMessage()" />
+          <button class="btn-primary" onclick="sendRoomMessage()">➤</button>
+        </div>
+        <p class="room-footer" id="roomFooter">Open in another browser to test multi-user</p>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ======================================================
+    MODULE 4 — FACE EMOTION DETECTION
+    Uses face-api.js which runs a CNN (deep learning model)
+    directly in the browser. We capture 12 frames from
+    webcam, run detection on each, and average the results.
+  ====================================================== -->
+  <div id="tab-face" class="tab-content">
+    <div class="module-header">
+      <div>
+        <h2>Face Emotion Detection</h2>
+        <p class="subtitle">One-shot scan — real CNN model, averages 12 frames for accuracy</p>
+      </div>
+      <button class="btn-primary" onclick="startFaceScan()">🙂 Scan My Face</button>
+    </div>
+
+    <div class="face-tip">
+      💡 <strong>For accurate results:</strong> When the scan starts, make a clear facial expression — a big smile, a frown, raised eyebrows, wide eyes. A relaxed "resting face" will register as Neutral.
+    </div>
+
+    <div class="face-layout">
+      <!-- Webcam preview -->
+      <div class="face-video-box">
+        <video id="faceVideo" autoplay muted playsinline></video>
+        <canvas id="faceCanvas"></canvas>
+        <div id="facePlaceholder" class="face-placeholder">
+          <div class="scan-icon">🔍</div>
+          <p>Click Scan My Face to begin</p>
+          <p class="face-sub">Scans once, then stops automatically</p>
+        </div>
+      </div>
+
+      <!-- Emotion breakdown bars -->
+      <div class="emotion-breakdown">
+        <div class="breakdown-title">EMOTION BREAKDOWN</div>
+        <div id="emotionBars">
+          <div class="emotion-row"><span>Neutral</span><div class="ebar"><div class="ebar-fill green" id="bar-neutral"></div></div><span id="val-neutral">–</span></div>
+          <div class="emotion-row"><span>Happy</span><div class="ebar"><div class="ebar-fill green" id="bar-happy"></div></div><span id="val-happy">–</span></div>
+          <div class="emotion-row"><span>Sad</span><div class="ebar"><div class="ebar-fill blue" id="bar-sad"></div></div><span id="val-sad">–</span></div>
+          <div class="emotion-row"><span>Angry</span><div class="ebar"><div class="ebar-fill red" id="bar-angry"></div></div><span id="val-angry">–</span></div>
+          <div class="emotion-row"><span>Fearful</span><div class="ebar"><div class="ebar-fill purple" id="bar-fearful"></div></div><span id="val-fearful">–</span></div>
+          <div class="emotion-row"><span>Disgusted</span><div class="ebar"><div class="ebar-fill orange" id="bar-disgusted"></div></div><span id="val-disgusted">–</span></div>
+          <div class="emotion-row"><span>Surprised</span><div class="ebar"><div class="ebar-fill yellow" id="bar-surprised"></div></div><span id="val-surprised">–</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Load our JS files -->
+  <script src="stress.js"></script>
+  <script src="voice.js"></script>
+  <script src="chat.js"></script>
+  <script src="room.js"></script>
+  <script src="face.js"></script>
+  <script src="app.js"></script>
+
+</body>
+</html>
